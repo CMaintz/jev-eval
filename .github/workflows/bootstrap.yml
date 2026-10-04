@@ -1,5 +1,3 @@
-# Foundry pinned to a full main SHA: the Python stack is on main but not in a release
-# tag yet. Move this pin to the next v2 tag once it ships.
 name: bootstrap
 on:
   workflow_dispatch: {}
@@ -7,7 +5,7 @@ on:
     - cron: '0 6 * * *'   # daily auto-prune - baseline shrinks on its own, one PR/day max
 jobs:
   bootstrap:
-    uses: CMaintz/foundry/.github/workflows/bootstrap.yml@ed570f522673f85891c77036d3a8941531c5755d
+    uses: CMaintz/foundry/.github/workflows/bootstrap.yml@v2
     with:
       working_directory: "."
       habit_hooks_plugin: "habit-hooks-generic"
