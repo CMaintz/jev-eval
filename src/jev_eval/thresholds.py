@@ -1,7 +1,8 @@
 """Recommend confidence cut-points, with an honesty guard and a min-N refusal.
 
-The guard default is a single constant (DEFAULT_GUARD) so the pending bootstrap-vs-holdout
-decision (spec section 14.2) is a one-line flip.
+The default guard is bootstrap with out-of-bag scoring (spec section 14.2): it uses every
+labeled row, gives a range on the gate, and reports accuracy measured on rows each pick never
+saw. Holdout is opt-in for large datasets.
 """
 
 from __future__ import annotations
