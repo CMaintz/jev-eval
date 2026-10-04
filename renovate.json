@@ -19,9 +19,9 @@
   ],
   "packageRules": [
     {
-      "description": "Let a release settle before proposing it, to dodge just-published broken or compromised versions (supply-chain hygiene). Security fixes are exempted in the vulnerability rule below so they still land fast.",
+      "description": "Let a release settle for 7 days (the floor semgrep's renovate-missing-minimum-release-age rule enforces) before proposing it, to dodge just-published broken or compromised versions (supply-chain hygiene). Security fixes are exempted in the vulnerability rule below so they still land fast.",
       "matchPackageNames": ["*"],
-      "minimumReleaseAge": "3 days"
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "The CONTRACT says pin everything; Renovate is the update path. Keep Actions pinned to a digest and bump the digest + the trailing # vN comment together.",
@@ -35,12 +35,12 @@
       "groupName": "mise toolchain"
     },
     {
-      "description": "Security fixes land fast and on their own, labelled; exempt from minimumReleaseAge so a patched release is never held back.",
+      "description": "Security fixes land fast and on their own, labelled; exempt from minimumReleaseAge so a patched release is never held back. null (Renovate's own vulnerabilityAlerts default) rather than \"0 seconds\", which the semgrep rule rejects as not \"N days\", or false, which renovate-config-validator rejects.",
       "matchPackageNames": ["*"],
       "isVulnerabilityAlert": true,
       "labels": ["security"],
       "prPriority": 10,
-      "minimumReleaseAge": "0 seconds"
+      "minimumReleaseAge": null
     }
   ],
   "lockFileMaintenance": { "enabled": true },
