@@ -92,7 +92,7 @@ def _buys(rec: Recommendation, guard: str) -> str:
         (t_lo, t_hi), (a_lo, a_hi) = rec.interval.threshold, rec.interval.accuracy
         line += f"\n  95% range: gate {t_lo:.2f}-{t_hi:.2f}, accuracy {pct(a_lo).strip()}-{pct(a_hi).strip()}"
     if guard != "none" and rec.in_sample is not None:
-        line += f"\n  on the rows it was picked on it looks like {pct(rec.in_sample.accuracy).strip()} (optimistic)"
+        line += f"\n  scored on all rows instead: {pct(rec.in_sample.accuracy).strip()} (optimistic)"
     return line
 
 

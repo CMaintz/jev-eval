@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .analysis import COMPOSITE, Scoring, composite, gated_ids
-from .metrics import Point
+from .metrics import Point, selective_accuracy
 from .score import Scored
 from .thresholds import MIN_REFUSE, MIN_WARN, Guard, Interval, Picker, bootstrap, holdout
 
@@ -80,7 +80,17 @@ def recommend(qid: str, kind: str, items: Sequence[Scored], pick: Picker, opts: 
     if point is None:
         return Recommendation(qid, kind, len(items), "unstable", in_sample=in_sample)
     status = "warn" if len(items) < MIN_WARN else "ok"
-    return Recommendation(qid, kind, len(items), status, point, interval, in_sample)
+    return Recommendation(qid, kind, len(items), status, point, interval, same_gate_all_rows(items, point))
+
+
+def same_gate_all_rows(items: Sequence[Scored], point: Point) -> Point:
+    """The reported gate scored on every row (optimistic): the contrast for the guarded numbers.
+
+    Under holdout the reported gate was picked on the train split, so this re-scores that gate
+    rather than reusing the all-rows pick, which may be a different threshold.
+    """
+    acc, cov = selective_accuracy(items, point.threshold)
+    return Point(point.threshold, cov, acc, round(cov * len(items)))
 
 
 def recommend_all(scoring: Scoring, pick: Picker, opts: GuardOptions) -> list[Recommendation]:

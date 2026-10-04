@@ -121,3 +121,11 @@ def test_report_measures_recalibration_but_not_for_small_or_composite() -> None:
     assert team is not None and team.ece_cv >= 0 and team.steps
     assert summary["composite"].recalibration is None
     assert report(records(30))["questions"]["team"].recalibration is None
+
+
+def test_holdout_contrast_scores_the_same_gate_on_all_rows() -> None:
+    items = score_records(records(300)).items["team"]
+    rec = recommend("team", "choice", items, picker(0.8, None), GuardOptions("holdout", 0, 0.3, 1))
+    assert rec.point is not None and rec.in_sample is not None
+    assert rec.in_sample.threshold == rec.point.threshold
+    assert rec.in_sample.covered >= rec.point.covered

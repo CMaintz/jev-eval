@@ -18,7 +18,7 @@ $ jev-eval thresholds --cache run.jsonl --target-accuracy 0.95
 team (choice, n=412): gate at 0.82
   auto-handle 58.7% (~242 rows) at 94.6% accuracy out-of-bag, escalate 41.3%
   95% range: gate 0.76-0.88, accuracy 91.2%-97.9%
-  on the rows it was picked on it looks like 95.3% (optimistic)
+  scored on all rows instead: 95.3% (optimistic)
 wrote thresholds.json (3 questions)
 ```
 
