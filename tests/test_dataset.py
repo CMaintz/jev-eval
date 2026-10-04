@@ -77,3 +77,10 @@ def test_check_labels_names_the_row_and_ignores_unknown_questions() -> None:
     check_labels([LabeledRow("s", {"other": 1, "urgent": False})], QUESTIONS)
     with pytest.raises(ValueError, match="row 2, question 'team'"):
         check_labels([LabeledRow("s", {}), LabeledRow("s", {"team": "legal"})], QUESTIONS)
+
+
+def test_meta_is_optional_and_must_be_an_object() -> None:
+    assert parse_row('{"state": "s", "labels": {}, "meta": {"source": "web"}}', "x").meta == {"source": "web"}
+    assert parse_row('{"state": "s", "labels": {}}', "x").meta == {}
+    with pytest.raises(ValueError, match="meta"):
+        parse_row('{"state": "s", "labels": {}, "meta": "web"}', "x")

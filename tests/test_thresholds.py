@@ -56,7 +56,20 @@ def test_bootstrap_range_brackets_a_plausible_gate() -> None:
     lo, hi = interval.threshold
     assert lo <= 0.7 <= hi
     assert interval.resamples == 200
-    assert interval.accuracy[0] >= 0.75
+    assert interval.accuracy[0] <= interval.oob_accuracy <= interval.accuracy[1]
+    assert 0.0 < interval.oob_coverage <= 1.0
+
+
+def test_out_of_bag_scoring_exposes_an_overfit_gate() -> None:
+    # Confidence carries no signal: 1 in 2 right at every level. In-sample, the pick finds a
+    # lucky high-confidence pocket at 60%; out of bag that luck does not repeat.
+    rng = random.Random(5)
+    items = [item(rng.random(), rng.random() < 0.5) for _ in range(300)]
+    pick = th.picker(0.6, None)
+    in_sample = pick(items)
+    interval = th.bootstrap(items, pick, 300, random.Random(2))
+    assert in_sample is not None and in_sample.accuracy >= 0.6
+    assert interval is not None and interval.oob_accuracy < 0.5
 
 
 def test_bootstrap_with_no_reachable_resample_is_none() -> None:

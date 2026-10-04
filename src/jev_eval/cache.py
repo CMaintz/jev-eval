@@ -27,6 +27,11 @@ def stable_hash(value: Any) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def state_chars(state: Any) -> int:
+    """Size of the state as Jev sees it (a string verbatim, anything else as JSON)."""
+    return len(state) if isinstance(state, str) else len(json.dumps(state, ensure_ascii=False))
+
+
 def record_key(record: Record) -> Key:
     return (record["model"], record["state_hash"], record["question_hash"])
 
@@ -49,6 +54,8 @@ def _record(model: str, index: int, row: LabeledRow, qid: str, question: dict[st
         "question": question,
         "answer": answer,
         "gold": row.labels[qid],
+        "meta": row.meta,
+        "state_chars": state_chars(row.state),
     }
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -16,14 +16,21 @@ _INLINE = re.compile(r"^(\w+)(?:\(([^)]*)\))?$")
 class LabeledRow:
     state: Any
     labels: dict[str, Any]
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 def parse_row(line: str, where: str) -> LabeledRow:
-    """One JSONL line: {"state": str | object, "labels": {question_id: gold}}."""
+    """One JSONL line: {"state": str | object, "labels": {question_id: gold}, "meta"?: {...}}.
+
+    `meta` is never sent to Jev; it rides along into the cache for per-slice reports.
+    """
     doc = json.loads(line)
     if not isinstance(doc, dict) or "state" not in doc or not isinstance(doc.get("labels"), dict):
         raise ValueError(f"{where}: expected an object with 'state' and a 'labels' map")
-    return LabeledRow(doc["state"], doc["labels"])
+    meta = doc.get("meta")
+    if meta is not None and not isinstance(meta, dict):
+        raise ValueError(f"{where}: 'meta' must be an object")
+    return LabeledRow(doc["state"], doc["labels"], meta or {})
 
 
 def load_rows(path: str | Path) -> list[LabeledRow]:

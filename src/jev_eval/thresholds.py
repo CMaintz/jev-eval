@@ -58,27 +58,51 @@ def percentile(values: Sequence[float], q: float) -> float:
 
 @dataclass(frozen=True)
 class Interval:
+    """Bootstrap result: 95% ranges plus the honest out-of-bag (OOB) estimate.
+
+    Each resample picks a gate on its in-bag rows and scores it on the rows that resample
+    left out, so `oob_accuracy`/`oob_coverage` are measured on rows the pick never saw. OOB
+    is slightly pessimistic (each pick sees ~63% of the unique rows), the safe direction.
+    """
+
     threshold: tuple[float, float]
     accuracy: tuple[float, float]
+    oob_accuracy: float
+    oob_coverage: float
     resamples: int
     misses: int
 
 
+def _resample(items: Sequence[Scored], pick: Picker, rng: random.Random) -> tuple[Point | None, Point | None]:
+    """One bootstrap draw: (the in-bag pick, that pick scored on the out-of-bag rows)."""
+    drawn = [rng.randrange(len(items)) for _ in items]
+    point = pick([items[i] for i in drawn])
+    in_bag = set(drawn)
+    oob = [item for i, item in enumerate(items) if i not in in_bag]
+    if point is None or not oob:
+        return point, None
+    acc, cov = selective_accuracy(oob, point.threshold)
+    return point, (Point(point.threshold, cov, acc, round(cov * len(oob))) if cov else None)
+
+
 def bootstrap(items: Sequence[Scored], pick: Picker, resamples: int, rng: random.Random) -> Interval | None:
-    """95% range on the recommended t and its accuracy, by resampling rows with replacement."""
-    found: list[Point] = []
+    """95% range on the gate and its out-of-bag accuracy, plus the mean OOB accuracy/coverage."""
+    picks: list[Point] = []
+    scored: list[Point] = []
     for _ in range(resamples):
-        point = pick(rng.choices(items, k=len(items)))
-        if point is not None:
-            found.append(point)
-    if not found:
+        point, oob = _resample(items, pick, rng)
+        picks += [point] if point else []
+        scored += [oob] if oob else []
+    if not picks or not scored:
         return None
-    ts, accs = [p.threshold for p in found], [p.accuracy for p in found]
+    ts, accs = [p.threshold for p in picks], [p.accuracy for p in scored]
     return Interval(
         (percentile(ts, 0.025), percentile(ts, 0.975)),
         (percentile(accs, 0.025), percentile(accs, 0.975)),
+        sum(accs) / len(accs),
+        sum(p.coverage for p in scored) / len(scored),
         resamples,
-        resamples - len(found),
+        resamples - len(picks),
     )
 
 

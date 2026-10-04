@@ -76,3 +76,15 @@ def test_missing_answers_are_recorded_and_retried() -> None:
     records = run(rows, QUESTIONS, provider)
     assert [r["answer"] for r in records] == [None, None]
     assert len(provider.calls) == 2
+
+
+def test_records_carry_meta_and_state_size_for_slices() -> None:
+    rows = [LabeledRow("plain text", {"urgent": True}, {"source": "web"}), LabeledRow({"id": 1}, {"urgent": False})]
+
+    class Echo(FakeProvider):
+        def evaluate(self, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
+            return {"answers": {"urgent": {"noul": 0.9}}}
+
+    first, second = run(rows, QUESTIONS, Echo())
+    assert first["meta"] == {"source": "web"} and first["state_chars"] == len("plain text")
+    assert second["meta"] == {} and second["state_chars"] == len('{"id": 1}')

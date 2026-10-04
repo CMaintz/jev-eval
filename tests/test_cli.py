@@ -6,20 +6,20 @@ from pathlib import Path
 import pytest
 from pytest import CaptureFixture, MonkeyPatch
 
-from jev_eval import cli
-from tests.fakes import QUESTIONS, FakeProvider, labels
+from jev_eval import cli, commands
+from tests.fakes import QUESTIONS, FakeProvider, labels, meta
 
 
 @pytest.fixture
 def fake(monkeypatch: MonkeyPatch) -> FakeProvider:
     provider = FakeProvider()
-    monkeypatch.setattr(cli, "provider_from_env", lambda model: provider)
+    monkeypatch.setattr(commands, "provider_from_env", lambda model: provider)
     return provider
 
 
 def write_data(tmp_path: Path, n: int) -> Path:
     data = tmp_path / "labeled.jsonl"
-    lines = [json.dumps({"state": {"id": i, "text": f"t{i}"}, "labels": labels(i)}) for i in range(n)]
+    lines = [json.dumps({"state": {"id": i, "text": f"t{i}"}, "labels": labels(i), "meta": meta(i)}) for i in range(n)]
     data.write_text("\n".join(lines) + "\n")
     return data
 
@@ -88,7 +88,7 @@ def test_thresholds_writes_the_contract(tmp_path: Path, fake: FakeProvider, caps
     assert cli.main(argv) == 0
     doc = json.loads(out_file.read_text())
     assert doc["version"] == 1 and set(doc["questions"]) == {"team", "urgent", "sentiment"}
-    assert "plausibly" in capsys.readouterr().out
+    assert "out-of-bag" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("guard", [[], ["--holdout", "0.3"], ["--no-guard"]])
@@ -124,3 +124,46 @@ def test_errors_exit_2(tmp_path: Path, fake: FakeProvider, capsys: CaptureFixtur
     data = write_data(tmp_path, 2)
     assert cli.main(["run", "--data", str(data), "--cache", str(tmp_path / "c")]) == 2
     assert "no questions" in capsys.readouterr().err
+
+
+def test_report_slices_and_svg(tmp_path: Path, fake: FakeProvider, capsys: CaptureFixture[str]) -> None:
+    cache = run_cache(tmp_path)
+    svg = tmp_path / "rel.svg"
+    capsys.readouterr()
+    assert cli.main(["report", "--cache", str(cache), "--slice", "meta.source", "--svg", str(svg)]) == 0
+    out = capsys.readouterr().out
+    assert "per-slice report by meta.source" in out and "email" in out and "chat" in out
+    assert "recalibration (isotonic" in out
+    assert svg.read_text().startswith("<svg")
+
+
+def test_compare_two_runs(tmp_path: Path, fake: FakeProvider, capsys: CaptureFixture[str]) -> None:
+    cache = run_cache(tmp_path)
+    capsys.readouterr()
+    assert cli.main(["compare", str(cache), str(cache)]) == 0
+    out = capsys.readouterr().out
+    assert "agreement 100.0%: B fixes 0, breaks 0" in out
+
+
+def test_calibrate_writes_the_optional_mapping(tmp_path: Path, fake: FakeProvider, capsys: CaptureFixture[str]) -> None:
+    cache = run_cache(tmp_path, 120)
+    out_file = tmp_path / "calibration.json"
+    assert cli.main(["calibrate", "--cache", str(cache), "--out", str(out_file)]) == 0
+    doc = json.loads(out_file.read_text())
+    assert doc["method"] == "isotonic" and set(doc["questions"]) == {"team", "urgent", "sentiment"}
+    assert doc["questions"]["urgent"]["input"] == "noul"
+    assert "ECE" in capsys.readouterr().out
+
+
+def test_calibrate_skips_small_questions(tmp_path: Path, fake: FakeProvider, capsys: CaptureFixture[str]) -> None:
+    cache = run_cache(tmp_path, 30)
+    assert cli.main(["calibrate", "--cache", str(cache), "--out", "-"]) == 0
+    captured = capsys.readouterr()
+    assert "skipped (fewer than 50 labeled rows)" in captured.err
+    assert '"questions": {}' in captured.out
+
+
+def test_version(capsys: CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["--version"])
+    assert "jev-eval 1.0.0" in capsys.readouterr().out

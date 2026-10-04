@@ -9,9 +9,11 @@ from typing import Any
 
 from . import metrics
 from .cache import Record
+from .calibrate import Recalibration, recalibration
 from .score import Scored, score_answer, with_tolerance
 
 COMPOSITE = "_row"
+RECAL_MIN = 50  # below this a cross-validated remap is noise; matches the thresholds refusal floor
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ class QuestionReport:
     risk_coverage: list[metrics.Point]
     extras: dict[str, float] = field(default_factory=dict)
     confusion: dict[tuple[str, str], int] = field(default_factory=dict)
+    recalibration: Recalibration | None = None
 
 
 def _extras(kind: str, items: Sequence[Scored]) -> dict[str, float]:
@@ -101,6 +104,9 @@ def question_report(qid: str, kind: str, items: Sequence[Scored], unanswered: in
         risk_coverage=metrics.risk_coverage(items),
         extras=_extras(kind, items),
         confusion=dict(metrics.confusion(items)) if kind != "composite" else {},
+        recalibration=recalibration(qid, kind, items, bins)
+        if kind != "composite" and len(items) >= RECAL_MIN
+        else None,
     )
 
 

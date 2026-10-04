@@ -1,12 +1,17 @@
 """Per-question recommendations and the family-wide `thresholds.json` contract (version 1).
 
     {"version": 1, "model": str, "generatedAt": ISO-8601 UTC,
+     "guard": {"method": "bootstrap" | "holdout" | "none", ...}, "tolerance": int,
      "questions": {id: {"type", "threshold", "accuracy", "coverage", "n"}},
      "composite"?: {"threshold", "accuracy", "coverage", "n", "questions": [id, ...]}}
 
-A Noul threshold applies to the Noul confidence |noul - 0.5| * 2 (a two-sided band around
-0.5), never to the raw P(yes). Questions refused for too few labels, or with no threshold
-that meets the goal, are omitted rather than written as null.
+`accuracy`/`coverage` are what the gate buys on rows the pick did not see: the mean
+out-of-bag estimate under bootstrap, the held-out split under holdout, and the (optimistic)
+same-rows numbers only under "none". `tolerance` > 0 means Score answers within that many
+levels of gold counted as correct. A Noul threshold applies to the Noul confidence
+|noul - 0.5| * 2 (a two-sided band around 0.5), never to the raw P(yes). Questions refused
+for too few labels, unstable under the guard, or with no gate that meets the goal are
+omitted rather than written as null.
 """
 
 from __future__ import annotations
@@ -38,9 +43,10 @@ class Recommendation:
     qid: str
     kind: str
     n: int
-    status: str  # ok | warn (below MIN_WARN) | refused (below MIN_REFUSE) | unreachable
-    point: Point | None = None
+    status: str  # ok | warn (below MIN_WARN) | refused (below MIN_REFUSE) | unreachable | unstable
+    point: Point | None = None  # the gate and what it buys under the guard
     interval: Interval | None = None
+    in_sample: Point | None = None  # the same gate scored on the rows it was picked on
 
     @property
     def usable(self) -> bool:
@@ -48,24 +54,33 @@ class Recommendation:
 
 
 def _guarded(items: Sequence[Scored], pick: Picker, opts: GuardOptions) -> tuple[Point | None, Interval | None]:
+    """(the reported gate, the bootstrap ranges). Under bootstrap the gate is the all-rows pick
+    with its accuracy/coverage replaced by the out-of-bag means."""
     rng = random.Random(opts.seed)
     if opts.guard == "holdout":
         return holdout(items, pick, opts.fraction, rng), None
     point = pick(items)
-    if opts.guard == "bootstrap" and point is not None:
-        return point, bootstrap(items, pick, opts.resamples, rng)
-    return point, None
+    if opts.guard != "bootstrap" or point is None:
+        return point, None
+    interval = bootstrap(items, pick, opts.resamples, rng)
+    if interval is None:
+        return None, None
+    covered = round(interval.oob_coverage * len(items))
+    return Point(point.threshold, interval.oob_coverage, interval.oob_accuracy, covered), interval
 
 
 def recommend(qid: str, kind: str, items: Sequence[Scored], pick: Picker, opts: GuardOptions) -> Recommendation:
     """Refuse below MIN_REFUSE labeled rows, warn below MIN_WARN, else pick under the guard."""
     if len(items) < MIN_REFUSE:
         return Recommendation(qid, kind, len(items), "refused")
+    in_sample = pick(items)
+    if in_sample is None:
+        return Recommendation(qid, kind, len(items), "unreachable")
     point, interval = _guarded(items, pick, opts)
     if point is None:
-        return Recommendation(qid, kind, len(items), "unreachable")
+        return Recommendation(qid, kind, len(items), "unstable", in_sample=in_sample)
     status = "warn" if len(items) < MIN_WARN else "ok"
-    return Recommendation(qid, kind, len(items), status, point, interval)
+    return Recommendation(qid, kind, len(items), status, point, interval, in_sample)
 
 
 def recommend_all(scoring: Scoring, pick: Picker, opts: GuardOptions) -> list[Recommendation]:
@@ -86,8 +101,22 @@ def _entry(rec: Recommendation) -> dict[str, Any]:
     }
 
 
+def guard_field(opts: GuardOptions) -> dict[str, Any]:
+    """How `accuracy`/`coverage` were measured, so a consumer knows what they mean."""
+    if opts.guard == "bootstrap":
+        return {"method": "bootstrap", "resamples": opts.resamples, "seed": opts.seed}
+    if opts.guard == "holdout":
+        return {"method": "holdout", "fraction": opts.fraction, "seed": opts.seed}
+    return {"method": "none"}
+
+
 def thresholds_document(
-    recs: Sequence[Recommendation], model: str, gated: Sequence[str], now: datetime | None = None
+    recs: Sequence[Recommendation],
+    model: str,
+    gated: Sequence[str],
+    opts: GuardOptions,
+    tolerance: int = 0,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
     usable = [rec for rec in recs if rec.usable]
@@ -95,6 +124,8 @@ def thresholds_document(
         "version": CONTRACT_VERSION,
         "model": model,
         "generatedAt": stamp,
+        "guard": guard_field(opts),
+        "tolerance": tolerance,
         "questions": {rec.qid: {"type": rec.kind, **_entry(rec)} for rec in usable if rec.qid != COMPOSITE},
     }
     for rec in usable:

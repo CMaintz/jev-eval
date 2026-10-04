@@ -30,7 +30,11 @@ def labels(i: int) -> dict[str, Any]:
 
 
 def make_rows(n: int) -> list[LabeledRow]:
-    return [LabeledRow({"id": i, "text": f"ticket {i}"}, labels(i)) for i in range(n)]
+    return [LabeledRow({"id": i, "text": f"ticket {i}" + "x" * (i % 4) * 300}, labels(i), meta(i)) for i in range(n)]
+
+
+def meta(i: int) -> dict[str, Any]:
+    return {"source": "email" if i % 2 else "chat"}
 
 
 def _team(i: int) -> dict[str, Any]:
