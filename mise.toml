@@ -22,7 +22,7 @@ ruff = "0.14.0" # lint + format; standalone binary, no project deps -> clean pin
 # together, and with ruff above - like the java template's PMD_VERSION, these mise.toml
 # pins are not auto-tracked by Renovate (only workflow-input defaults are).
 MYPY_VERSION = "1.18.2"
-PYTEST_VERSION = "8.4.2"
+PYTEST_VERSION = "9.0.3" # Foundry template pins 8.4.2, which has PYSEC-2026-1845 (fixed in 9.0.3)
 PYTEST_COV_VERSION = "7.0.0"
 PIP_AUDIT_VERSION = "2.9.0"
 # habit-hooks (the structural-smell detector) is a pinned, mise-managed pip tool,

@@ -39,7 +39,12 @@ def _add_thresholds(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     goal.add_argument("--target-accuracy", type=float, help="smallest gate whose accuracy clears this")
     goal.add_argument("--max-escalation", type=float, help="strictest gate escalating at most this fraction")
     guard = p.add_mutually_exclusive_group()
-    guard.add_argument("--bootstrap", type=int, metavar="N", help="bootstrap range over N resamples")
+    guard.add_argument(
+        "--bootstrap",
+        type=int,
+        metavar="N",
+        help=f"bootstrap range over N resamples (default guard: {th.DEFAULT_GUARD})",
+    )
     guard.add_argument("--holdout", type=float, metavar="FRACTION", help="pick on train, report on held-out fraction")
     guard.add_argument("--no-guard", action="store_true", help="pick and score on the same rows (optimistic)")
     p.add_argument("--seed", type=int, default=th.DEFAULT_SEED)
