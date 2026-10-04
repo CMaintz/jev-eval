@@ -1,0 +1,51 @@
+[project]
+name = "jev-eval"
+version = "0.2.0"
+description = "Measure and calibrate TypeSafe AI's Jev on your own labeled data, and get the confidence cut-points to gate on."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Christoffer Maintz" }]
+requires-python = ">=3.10"
+dependencies = []
+keywords = ["jev", "typesafe", "calibration", "evaluation", "ece", "thresholds", "llm"]
+
+[project.urls]
+Homepage = "https://github.com/CMaintz/jev-eval"
+Issues = "https://github.com/CMaintz/jev-eval/issues"
+
+[project.scripts]
+jev-eval = "jev_eval.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jev_eval"]
+
+[tool.ruff]
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C90", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-statements = 18
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["jev_eval"]
+
+[tool.coverage.report]
+omit = ["src/jev_eval/provider.py"]
