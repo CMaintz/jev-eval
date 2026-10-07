@@ -121,24 +121,20 @@ def guard_field(opts: GuardOptions) -> dict[str, Any]:
 
 
 def thresholds_document(
-    recs: Sequence[Recommendation],
-    model: str,
-    gated: Sequence[str],
-    opts: GuardOptions,
-    tolerance: int = 0,
-    now: datetime | None = None,
+    recs: Sequence[Recommendation], scoring: Scoring, opts: GuardOptions, now: datetime | None = None
 ) -> dict[str, Any]:
+    """The contract for `recs`, drawn from `scoring` (model, tolerance, gated questions)."""
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
     usable = [rec for rec in recs if rec.usable]
     doc: dict[str, Any] = {
         "version": CONTRACT_VERSION,
-        "model": model,
+        "model": scoring.model,
         "generatedAt": stamp,
         "guard": guard_field(opts),
-        "tolerance": tolerance,
+        "tolerance": scoring.tolerance,
         "questions": {rec.qid: {"type": rec.kind, **_entry(rec)} for rec in usable if rec.qid != COMPOSITE},
     }
     for rec in usable:
         if rec.qid == COMPOSITE:
-            doc["composite"] = {**_entry(rec), "questions": list(gated)}
+            doc["composite"] = {**_entry(rec), "questions": gated_ids(scoring)}
     return doc

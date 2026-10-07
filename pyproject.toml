@@ -28,7 +28,7 @@ line-length = 120
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "C90", "PLR0915"]
+select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

@@ -24,6 +24,7 @@ class Scoring:
     kinds: dict[str, str]
     unanswered: dict[str, int]
     model: str
+    tolerance: int = 0
 
 
 def score_records(records: Sequence[Record], tolerance: int = 0) -> Scoring:
@@ -38,7 +39,7 @@ def score_records(records: Sequence[Record], tolerance: int = 0) -> Scoring:
         else:
             items[rec["id"]].append(with_tolerance(scored, tolerance))
     models = sorted({str(rec["model"]) for rec in records})
-    return Scoring(dict(items), kinds, dict(unanswered), ", ".join(models) or "unknown")
+    return Scoring(dict(items), kinds, dict(unanswered), ", ".join(models) or "unknown", tolerance)
 
 
 def gated_ids(scoring: Scoring) -> list[str]:

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from . import thresholds as th
-from .analysis import COMPOSITE, gated_ids, report, score_records
+from .analysis import COMPOSITE, report, score_records
 from .cache import Record, load_cache, run
 from .calibrate import calibration_document, recalibration
 from .compare import compare
@@ -87,7 +87,7 @@ def cmd_thresholds(args: argparse.Namespace) -> int:
     opts = guard_options(args)
     recs = recommend_all(scoring, th.picker(args.target_accuracy, args.max_escalation), opts)
     sys.stdout.write(render_thresholds(recs, opts.guard))
-    doc = thresholds_document(recs, scoring.model, gated_ids(scoring), opts, args.tolerance)
+    doc = thresholds_document(recs, scoring, opts)
     emit_json(doc, args.out, "questions")
     return 0
 
