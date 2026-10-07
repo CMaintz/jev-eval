@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -43,9 +44,20 @@ def load_cache(path: str | Path) -> list[Record]:
     return [json.loads(line) for line in file.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _record(model: str, index: int, row: LabeledRow, qid: str, question: dict[str, Any], answer: Any) -> Record:
+@dataclass(frozen=True)
+class Asker:
+    """Who answers (`provider` under `model`), what is asked, and the answers already known."""
+
+    provider: Provider
+    model: str
+    questions: Questions
+    known: dict[Key, Any]
+
+
+def _record(asker: Asker, index: int, row: LabeledRow, qid: str, answer: Any) -> Record:
+    question = asker.questions[qid]
     return {
-        "model": model,
+        "model": asker.model,
         "row": index,
         "state_hash": stable_hash(row.state),
         "id": qid,
@@ -66,18 +78,17 @@ def _ask(provider: Provider, row: LabeledRow, asked: Questions) -> dict[str, Any
     return answers if isinstance(answers, dict) else {}
 
 
-def run_row(
-    provider: Provider, model: str, index: int, row: LabeledRow, questions: Questions, known: dict[Key, Any]
-) -> list[Record]:
+def run_row(asker: Asker, index: int, row: LabeledRow) -> list[Record]:
     """Score one row: only its labeled questions, and only those not already answered."""
-    labeled = {qid: q for qid, q in questions.items() if qid in row.labels}
+    labeled = {qid: q for qid, q in asker.questions.items() if qid in row.labels}
     state_hash = stable_hash(row.state)
-    missing = {qid: q for qid, q in labeled.items() if (model, state_hash, stable_hash(q)) not in known}
-    fresh = _ask(provider, row, missing)
+    known = asker.known
+    missing = {qid: q for qid, q in labeled.items() if (asker.model, state_hash, stable_hash(q)) not in known}
+    fresh = _ask(asker.provider, row, missing)
     records = []
     for qid, question in labeled.items():
-        key = (model, state_hash, stable_hash(question))
-        records.append(_record(model, index, row, qid, question, fresh.get(qid) if qid in missing else known[key]))
+        key = (asker.model, state_hash, stable_hash(question))
+        records.append(_record(asker, index, row, qid, fresh.get(qid) if qid in missing else known[key]))
         if records[-1]["answer"] is not None:
             known[key] = records[-1]["answer"]
     return records
@@ -108,22 +119,20 @@ def run(
     """
     name = model or str(getattr(provider, "model", "unknown"))
     if cache_path is None:
-        known: dict[Key, Any] = {}
-        return [rec for i, row in enumerate(rows) for rec in run_row(provider, name, i, row, questions, known)]
-    records = _run_streaming(rows, questions, provider, name, Path(cache_path))
+        asker = Asker(provider, name, questions, {})
+        return [rec for i, row in enumerate(rows) for rec in run_row(asker, i, row)]
+    path = Path(cache_path)
+    records = _run_streaming(rows, Asker(provider, name, questions, _known_answers(path)), path)
     write_cache(cache_path, records)
     _partial(Path(cache_path)).unlink()
     return records
 
 
-def _run_streaming(
-    rows: Iterable[LabeledRow], questions: Questions, provider: Provider, model: str, path: Path
-) -> list[Record]:
-    known = _known_answers(path)
+def _run_streaming(rows: Iterable[LabeledRow], asker: Asker, path: Path) -> list[Record]:
     records: list[Record] = []
     with _partial(path).open("a", encoding="utf-8") as sink:
         for i, row in enumerate(rows):
-            fresh = run_row(provider, model, i, row, questions, known)
+            fresh = run_row(asker, i, row)
             sink.writelines(_line(r) for r in fresh)
             sink.flush()
             records.extend(fresh)

@@ -87,7 +87,7 @@ def test_thresholds_document_is_the_v1_contract() -> None:
     recs = recommend_all(scoring, picker(0.8, None), NO_GUARD)
     assert [r.qid for r in recs] == ["sentiment", "team", "urgent", COMPOSITE]
     when = datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)
-    doc = thresholds_document(recs, scoring.model, gated_ids(scoring), NO_GUARD, 1, when)
+    doc = thresholds_document(recs, scoring, NO_GUARD, when)
     assert list(doc) == ["version", "model", "generatedAt", "guard", "tolerance", "questions", "composite"]
     assert doc["version"] == 1 and doc["model"] == "jev-fake" and doc["generatedAt"] == "2026-10-04T12:00:00Z"
     assert doc["guard"] == {"method": "none"} and doc["tolerance"] == 1
@@ -105,12 +105,12 @@ def test_thresholds_document_is_the_v1_contract() -> None:
     ],
 )
 def test_guard_field_says_what_accuracy_means(opts: GuardOptions, expected: dict[str, object]) -> None:
-    assert thresholds_document([], "m", [], opts)["guard"] == expected
+    assert thresholds_document([], score_records([]), opts)["guard"] == expected
 
 
 def test_refused_questions_are_omitted_not_null() -> None:
     scoring = score_records(records(40))
-    doc = thresholds_document(recommend_all(scoring, picker(0.8, None), NO_GUARD), "m", [], NO_GUARD)
+    doc = thresholds_document(recommend_all(scoring, picker(0.8, None), NO_GUARD), scoring, NO_GUARD)
     assert doc["questions"] == {}
     assert "composite" not in doc
 

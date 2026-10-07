@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# foundry-pr-report - print a PR's current check verdict and, on failure, the failing
+# steps' logs. One-shot and NON-BLOCKING: it reports the state right now and exits - never
+# a blocking watch. Meant to be called once CI is known to have finished (from a
+# webhook-fired routine, a background task that resumes the session, or by hand), so the
+# caller gets the actual error text, not just a red X.
+#
+#   Usage: foundry-pr-report [<pr>] [--repo <owner/repo>]
+#     <pr>  PR number or URL; defaults to the PR for the current branch.
+#   Exit:  0 all checks passed or were skipped; 1 one or more failed/cancelled;
+#          2 checks still pending (nothing to judge yet).
+set -euo pipefail
+
+PR=""; REPO=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repo) REPO=(--repo "$2"); shift 2 ;;
+    -*) echo "unknown flag: $1" >&2; exit 2 ;;
+    *) PR="$1"; shift ;;
+  esac
+done
+
+# `gh pr checks` with no positional arg targets the current branch's PR; pass <pr> only
+# when given (an empty string would be a bad argument).
+PRARG=()
+if [ -n "$PR" ]; then PRARG=("$PR"); fi
+
+checks_json() { gh pr checks "${PRARG[@]}" "${REPO[@]}" --json name,bucket,link "$@"; }
+
+# Dump the failed steps' logs for each run behind a failing check.
+dump_failures() {
+  local run
+  checks_json -q '.[] | select(.bucket=="fail" or .bucket=="cancel") | .link' \
+    | grep -oE 'runs/[0-9]+' | grep -oE '[0-9]+' | sort -u \
+    | while read -r run; do
+        echo "::group::failed run $run"
+        gh run view "$run" "${REPO[@]}" --log-failed 2> /dev/null || true
+        echo "::endgroup::"
+      done
+}
+
+bad="$(checks_json -q '[.[] | select(.bucket=="fail" or .bucket=="cancel")] | length')"
+pend="$(checks_json -q '[.[] | select(.bucket=="pending")] | length')"
+checks_json -q '.[] | "\(.bucket)\t\(.name)"'
+
+if [ "${bad:-0}" != 0 ]; then
+  echo "foundry-pr-report: $bad check(s) failed - logs follow"
+  dump_failures
+  exit 1
+fi
+if [ "${pend:-0}" != 0 ]; then
+  echo "foundry-pr-report: $pend check(s) still pending; nothing failed yet"
+  exit 2
+fi
+echo "foundry-pr-report: all checks passed"
