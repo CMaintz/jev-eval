@@ -15,14 +15,16 @@ from .analysis import COMPOSITE, report, score_records
 from .budget import STATE_BUDGET, estimate_tokens, near_limit, usage
 from .cache import Record, load_cache, run, state_chars
 from .calibrate import calibration_document, recalibration
+from .check import check, load_thresholds, warnings
 from .compare import compare
 from .contract import GuardOptions, recommend_all, thresholds_document
 from .dataset import LabeledRow, Questions, check_labels, load_config, load_rows, parse_inline
 from .provider import DEFAULT_MODEL, provider_from_env
 from .render import render_report, render_thresholds, render_usage
-from .render_more import render_calibration, render_compare, render_slices
+from .render_more import render_calibration, render_check, render_compare, render_slices, render_yes
 from .reportsvg import reliability_svg
 from .slices import slice_report
+from .yes import yes_cuts, yes_field
 
 
 def load(path: str) -> list[Record]:
@@ -96,13 +98,25 @@ def guard_options(args: argparse.Namespace) -> GuardOptions:
 
 
 def cmd_thresholds(args: argparse.Namespace) -> int:
+    goal = args.target_accuracy is not None or args.max_escalation is not None
+    if not goal and not args.yes_precision:
+        raise ValueError("pass --target-accuracy, --max-escalation and/or --yes-precision")
     scoring = score_records(load(args.cache), tolerance=args.tolerance)
     opts = guard_options(args)
-    recs = recommend_all(scoring, th.picker(args.target_accuracy, args.max_escalation), opts)
-    sys.stdout.write(render_thresholds(recs, opts.guard))
-    doc = thresholds_document(recs, scoring, opts)
-    emit_json(doc, args.out, "questions")
+    recs = recommend_all(scoring, th.picker(args.target_accuracy, args.max_escalation), opts) if goal else []
+    cuts = yes_cuts(scoring, args.yes_precision, opts) if args.yes_precision else []
+    sys.stdout.write(render_thresholds(recs, opts.guard) + render_yes(cuts, opts.guard))
+    emit_json(thresholds_document(recs, scoring, opts, yes_field(cuts)), args.out, "questions")
     return 0
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    """Exit 1 when a recorded gate has drifted on the new rows, so a scheduled job can alert."""
+    doc = load_thresholds(args.thresholds)
+    scoring = score_records(load(args.cache), tolerance=int(doc.get("tolerance") or 0))
+    checks = check(doc, scoring)
+    sys.stdout.write(render_check(checks, warnings(doc, scoring)))
+    return 1 if any(c.status == "drifted" for c in checks) else 0
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
@@ -130,4 +144,5 @@ COMMANDS = {
     "thresholds": cmd_thresholds,
     "compare": cmd_compare,
     "calibrate": cmd_calibrate,
+    "check": cmd_check,
 }

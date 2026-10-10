@@ -166,4 +166,4 @@ def test_calibrate_skips_small_questions(tmp_path: Path, fake: FakeProvider, cap
 def test_version(capsys: CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         cli.main(["--version"])
-    assert "jev-eval 1.1.0" in capsys.readouterr().out
+    assert "jev-eval 1.2.0" in capsys.readouterr().out

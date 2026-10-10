@@ -125,4 +125,4 @@ def render_recommendation(rec: Recommendation, guard: str) -> str:
 
 
 def render_thresholds(recs: Sequence[Recommendation], guard: str) -> str:
-    return "\n".join(render_recommendation(rec, guard) for rec in recs) + "\n"
+    return "".join(render_recommendation(rec, guard) + "\n" for rec in recs)

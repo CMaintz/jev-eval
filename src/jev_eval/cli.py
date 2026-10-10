@@ -1,4 +1,4 @@
-"""jev-eval CLI: run | report | thresholds | compare | calibrate. Only `run` touches the network."""
+"""jev-eval CLI: run | report | thresholds | compare | calibrate | check. Only `run` touches the network."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _add_report(sub: Sub) -> None:
 def _add_thresholds(sub: Sub) -> None:
     p = sub.add_parser("thresholds", help="recommend cut-points and write thresholds.json (offline)")
     p.add_argument("--cache", required=True)
-    goal = p.add_mutually_exclusive_group(required=True)
+    goal = p.add_mutually_exclusive_group()
     goal.add_argument("--target-accuracy", type=float, help="smallest gate whose accuracy clears this")
     goal.add_argument("--max-escalation", type=float, help="strictest gate escalating at most this fraction")
     guard = p.add_mutually_exclusive_group()
@@ -50,7 +50,26 @@ def _add_thresholds(sub: Sub) -> None:
     guard.add_argument("--no-guard", action="store_true", help="pick and score on the same rows (optimistic)")
     p.add_argument("--seed", type=int, default=th.DEFAULT_SEED)
     p.add_argument("--tolerance", type=int, default=0, help="Score: count within-N levels of gold as correct")
+    p.add_argument(
+        "--yes-precision",
+        type=_targets,
+        metavar="P[,P...]",
+        help="Noul: lowest P(yes) whose 'yes' is right this often (e.g. 0.9,0.7 for Leash repairAt,noteAt)",
+    )
     p.add_argument("--out", default="thresholds.json", help="contract file to write ('-' for stdout only)")
+
+
+def _targets(text: str) -> list[float]:
+    values = [float(part) for part in text.split(",") if part.strip()]
+    if not values or not all(0 < v <= 1 for v in values):
+        raise argparse.ArgumentTypeError("expected precisions in (0, 1], e.g. 0.9,0.7")
+    return values
+
+
+def _add_check(sub: Sub) -> None:
+    p = sub.add_parser("check", help="does a thresholds.json still hold on newly labeled rows? (offline)")
+    p.add_argument("--cache", required=True, help="cache from `run` over the new labeled rows")
+    p.add_argument("--thresholds", required=True, help="the published thresholds.json")
 
 
 def _add_compare(sub: Sub) -> None:
@@ -72,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jev-eval", description="Measure and calibrate Jev on your labeled data.")
     parser.add_argument("--version", action="version", version=f"jev-eval {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
-    for add in (_add_run, _add_report, _add_thresholds, _add_compare, _add_calibrate):
+    for add in (_add_run, _add_report, _add_thresholds, _add_compare, _add_calibrate, _add_check):
         add(sub)
     return parser
 

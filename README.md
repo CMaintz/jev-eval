@@ -31,6 +31,7 @@ Only `run` calls Jev (and costs money). Every other command is a pure function o
 | `thresholds` | Recommend cut-points under an honesty guard; writes `thresholds.json` |
 | `compare` | Two runs over the same rows: model-pin drift, or two question wordings |
 | `calibrate` | Measure what a recalibration would fix; writes an optional `calibration.json` |
+| `check` | Does a published `thresholds.json` still hold on newly labeled rows? Exit 1 on drift |
 
 ## Inputs
 
@@ -58,7 +59,7 @@ Only `run` calls Jev (and costs money). Every other command is a pure function o
 }
 ```
 
-The config uses jev-sort's question schema (`kind`/`options`/`levels`). The Jev wire shape (`type`/`criteria`) is accepted too. Config files are **JSON, not YAML**: YAML would need a runtime dependency. A jev-sort YAML config converts one to one.
+The config uses jev-sort's question schema (`kind`/`options`/`levels`). The Jev wire shape (`type`/`criteria`) is accepted too. Config files are **JSON, not YAML**: YAML would need a runtime dependency. jev-sort reads YAML, and JSON is valid YAML, so write a shared config as JSON and both tools read the same file. That also keeps the questions identical, which `definitions` in `thresholds.json` checks.
 
 ## What it measures
 
@@ -83,13 +84,14 @@ A Score answer's `score` is read as a level index (0..N-1, like jev-rerank). If 
 ## Thresholds
 
 ```console
-jev-eval thresholds --cache run.jsonl (--target-accuracy 0.95 | --max-escalation 0.30)
+jev-eval thresholds --cache run.jsonl [--target-accuracy 0.95 | --max-escalation 0.30] [--yes-precision 0.9,0.7]
                     [--bootstrap N | --holdout FRACTION | --no-guard] [--tolerance N] [--seed S] [--out thresholds.json]
 ```
 
 - `--target-accuracy A`: the lowest gate whose selective accuracy reaches `A` (the most coverage at that accuracy).
 - `--max-escalation E`: the strictest gate that still escalates at most `E` of rows (the best accuracy within that budget).
 - `--tolerance N`: for Score, count within-N levels of gold as correct. Recorded in `thresholds.json`.
+- `--yes-precision P[,P...]`: for each Noul, the lowest raw P(yes) whose "yes" is right at least `P` of the time, plus the share of real yeses it catches. This is the cut-point for tools that act when P(yes) is high, such as Leash's `repairAt`/`noteAt` (for example `0.9,0.7`) or jev-guard's Noul cut-offs. Measured under the same guard as the gates. It can be the only goal.
 
 Candidate gates are the confidences actually observed, so every recommended `t` can be reached. If no gate meets the goal, jev-eval says so instead of picking the closest.
 
@@ -119,7 +121,13 @@ A small, versioned file the rest of the family can load:
     "team": {"type": "choice", "threshold": 0.82, "accuracy": 0.946, "coverage": 0.587, "n": 412},
     "urgent": {"type": "noul", "threshold": 0.7, "accuracy": 0.951, "coverage": 0.55, "n": 412}
   },
-  "composite": {"threshold": 0.8, "accuracy": 0.92, "coverage": 0.48, "n": 412, "questions": ["sentiment", "team"]}
+  "composite": {"threshold": 0.8, "accuracy": 0.92, "coverage": 0.48, "n": 412, "questions": ["sentiment", "team"]},
+  "yesAt": {
+    "urgent": [{"target": 0.9, "threshold": 0.86, "precision": 0.912, "recall": 0.61, "flagged": 0.31, "n": 412}]
+  },
+  "definitions": {
+    "team": {"type": "choice", "instructions": "Which team should handle this ticket?", "criteria": {"billing": "payment or charge issues", "tech": "bugs, errors, outages", "sales": "pre-purchase questions"}}
+  }
 }
 ```
 
@@ -131,8 +139,20 @@ A small, versioned file the rest of the family can load:
 | `questions.<id>.threshold` | Auto-decide when the gate confidence is `>=` this. For **Noul** it applies to `abs(noul - 0.5) * 2`, never to the raw P(yes): 0.7 means "auto-decide when `noul >= 0.85` or `noul <= 0.15`". |
 | `questions.<id>.accuracy`, `coverage`, `n` | What the gate buys, measured per `guard`, and the labeled rows behind it. |
 | `composite` | Present only when two or more questions are gated (Choice/Score). One cut-point for the *minimum* of those confidences per row: the number for jev-sort `--escalate`. |
+| `yesAt.<id>` | With `--yes-precision`: per target, flag a row when raw `noul >= threshold`. `precision` is how often a flagged row really is a yes, `recall` the share of real yeses flagged, `flagged` the share of all rows flagged. |
+| `definitions.<id>` | The question exactly as jev-eval sent it. A consumer whose question differs (deep equality, key order ignored) should warn that it was reworded since it was measured. |
+
+`yesAt` and `definitions` arrived in 1.2.0. Both are additive, so the version stays 1; consumers ignore keys they do not know. Readers: jev-sort `--thresholds` (1.2.0), with jev-guard and the jev-dotnet and jev-java SDKs following.
 
 Questions that were refused, unstable under the guard, or had no reachable gate are left out, never written as `null`. Thresholds are on Jev's *raw* confidences.
+
+## Check
+
+```console
+jev-eval check --cache this-month.jsonl --thresholds thresholds.json
+```
+
+Applies every gate in a published `thresholds.json` (questions, composite, yes cut-points) as is to a newly labeled run, and compares its accuracy there with what the file recorded. A gate has **drifted** when the new accuracy is lower by more than sampling noise explains: two standard errors at the recorded accuracy over the rows the gate covers now. Fewer than 30 covered rows reads as "too few rows" rather than drift. It also warns when the model changed or a question was reworded since the file was made. The exit code is 1 when any gate drifted, so a scheduled job can alert; it never rewrites the file.
 
 ## Compare
 
@@ -179,6 +199,6 @@ The cache is JSONL, one line per (row, question): model, state and question hash
 
 ## Status
 
-**1.1**: usage and cost, near-limit warnings and per-row rejections on top of **1.0**: `run`, `report` (with slices and an SVG chart), `thresholds` with the out-of-bag bootstrap guard, `compare`, measure-only `calibrate`, and the `thresholds.json` v1 contract, for all three question types. Tested against a fake provider at 99% coverage. Gated by the [Foundry](https://github.com/CMaintz/foundry) Python stack (ruff, mypy strict, pytest, pip-audit, structural smells).
+**1.2**: `check` for drift, `--yes-precision` yes cut-points and question `definitions` in the contract. **1.1**: usage and cost, near-limit warnings and per-row rejections on top of **1.0**: `run`, `report` (with slices and an SVG chart), `thresholds` with the out-of-bag bootstrap guard, `compare`, measure-only `calibrate`, and the `thresholds.json` v1 contract, for all three question types. Tested against a fake provider at 99% coverage. Gated by the [Foundry](https://github.com/CMaintz/foundry) Python stack (ruff, mypy strict, pytest, pip-audit, structural smells).
 
 MIT (c) Christoffer Maintz
