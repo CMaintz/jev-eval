@@ -87,8 +87,10 @@ def test_thresholds_document_is_the_v1_contract() -> None:
     recs = recommend_all(scoring, picker(0.8, None), NO_GUARD)
     assert [r.qid for r in recs] == ["sentiment", "team", "urgent", COMPOSITE]
     when = datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)
-    doc = thresholds_document(recs, scoring, NO_GUARD, when)
-    assert list(doc) == ["version", "model", "generatedAt", "guard", "tolerance", "questions", "composite"]
+    doc = thresholds_document(recs, scoring, NO_GUARD, now=when)
+    keys = ["version", "model", "generatedAt", "guard", "tolerance", "questions", "composite", "definitions"]
+    assert list(doc) == keys
+    assert doc["definitions"]["team"] == QUESTIONS["team"]
     assert doc["version"] == 1 and doc["model"] == "jev-fake" and doc["generatedAt"] == "2026-10-04T12:00:00Z"
     assert doc["guard"] == {"method": "none"} and doc["tolerance"] == 1
     team = doc["questions"]["team"]

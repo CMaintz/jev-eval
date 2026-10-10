@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-10
+
+### Added
+
+- `jev-eval check --cache NEW --thresholds thresholds.json`: applies each recorded gate to newly labeled rows and flags the ones whose accuracy dropped by more than sampling noise explains (exit 1), plus model changes and reworded questions.
+- `thresholds --yes-precision 0.9,0.7`: per Noul, the lowest raw P(yes) whose "yes" is right that often, with recall, under the same guard. Written as `yesAt` in `thresholds.json`, for tools that act on a high P(yes) such as Leash's bands. It can be the only goal.
+- `thresholds.json` records `definitions`, the exact question jev-eval sent per id, so a consumer can warn when a question was reworded since it was measured. Contract version stays 1.
+
 ## [1.1.0] - 2026-10-10
 
 ### Added

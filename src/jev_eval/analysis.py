@@ -25,21 +25,24 @@ class Scoring:
     unanswered: dict[str, int]
     model: str
     tolerance: int = 0
+    definitions: dict[str, dict[str, Any]] = field(default_factory=dict)  # id -> the question as sent
 
 
 def score_records(records: Sequence[Record], tolerance: int = 0) -> Scoring:
     items: dict[str, list[Scored]] = defaultdict(list)
     kinds: dict[str, str] = {}
     unanswered: dict[str, int] = defaultdict(int)
+    definitions: dict[str, dict[str, Any]] = {}
     for rec in records:
         kinds[rec["id"]] = rec["type"]
+        definitions[rec["id"]] = rec["question"]
         scored = score_answer(rec["row"], rec["question"], rec["answer"], rec["gold"])
         if scored is None:
             unanswered[rec["id"]] += 1
         else:
             items[rec["id"]].append(with_tolerance(scored, tolerance))
     models = sorted({str(rec["model"]) for rec in records})
-    return Scoring(dict(items), kinds, dict(unanswered), ", ".join(models) or "unknown", tolerance)
+    return Scoring(dict(items), kinds, dict(unanswered), ", ".join(models) or "unknown", tolerance, definitions)
 
 
 def gated_ids(scoring: Scoring) -> list[str]:

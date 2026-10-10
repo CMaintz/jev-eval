@@ -1,6 +1,6 @@
 [project]
 name = "jev-eval"
-version = "1.1.0"
+version = "1.2.0"
 description = "Measure and calibrate TypeSafe AI's Jev on your own labeled data, and get the confidence cut-points to gate on."
 readme = "README.md"
 license = { text = "MIT" }

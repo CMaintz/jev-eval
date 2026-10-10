@@ -3,7 +3,9 @@
     {"version": 1, "model": str, "generatedAt": ISO-8601 UTC,
      "guard": {"method": "bootstrap" | "holdout" | "none", ...}, "tolerance": int,
      "questions": {id: {"type", "threshold", "accuracy", "coverage", "n"}},
-     "composite"?: {"threshold", "accuracy", "coverage", "n", "questions": [id, ...]}}
+     "composite"?: {"threshold", "accuracy", "coverage", "n", "questions": [id, ...]},
+     "yesAt"?: {id: [{"target", "threshold", "precision", "recall", "flagged", "n"}, ...]},
+     "definitions": {id: the question exactly as jev-eval sent it}}
 
 `accuracy`/`coverage` are what the gate buys on rows the pick did not see: the mean
 out-of-bag estimate under bootstrap, the held-out split under holdout, and the (optimistic)
@@ -12,6 +14,11 @@ levels of gold counted as correct. A Noul threshold applies to the Noul confiden
 |noul - 0.5| * 2 (a two-sided band around 0.5), never to the raw P(yes). Questions refused
 for too few labels, unstable under the guard, or with no gate that meets the goal are
 omitted rather than written as null.
+
+`yesAt` (from `--yes-precision`) is the other Noul reading: flag a row when raw P(yes) >=
+threshold, which is right `precision` of the time and catches `recall` of the real yeses.
+`definitions` lets a consumer tell whether a question was reworded since it was measured.
+Both are additive: version stays 1, and consumers ignore keys they do not know.
 """
 
 from __future__ import annotations
@@ -121,9 +128,13 @@ def guard_field(opts: GuardOptions) -> dict[str, Any]:
 
 
 def thresholds_document(
-    recs: Sequence[Recommendation], scoring: Scoring, opts: GuardOptions, now: datetime | None = None
+    recs: Sequence[Recommendation],
+    scoring: Scoring,
+    opts: GuardOptions,
+    yes_at: dict[str, Any] | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
-    """The contract for `recs`, drawn from `scoring` (model, tolerance, gated questions)."""
+    """The contract for `recs` (and any yes cut-points), drawn from `scoring`."""
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
     usable = [rec for rec in recs if rec.usable]
     doc: dict[str, Any] = {
@@ -137,4 +148,7 @@ def thresholds_document(
     for rec in usable:
         if rec.qid == COMPOSITE:
             doc["composite"] = {**_entry(rec), "questions": gated_ids(scoring)}
+    if yes_at:
+        doc["yesAt"] = yes_at
+    doc["definitions"] = dict(sorted(scoring.definitions.items()))
     return doc
