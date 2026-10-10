@@ -26,6 +26,8 @@ packages = ["src/jev_eval"]
 [tool.ruff]
 line-length = 120
 src = ["src", "tests"]
+# vendored foundry script, kept byte-identical to upstream
+extend-exclude = ["scripts/ruleset_guard.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
