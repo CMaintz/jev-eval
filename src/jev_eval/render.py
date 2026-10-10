@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from .analysis import QuestionReport
+from .budget import NEAR, STATE_BUDGET, Usage
 from .contract import Recommendation
 from .metrics import Point
 from .thresholds import MIN_REFUSE, MIN_WARN
@@ -72,8 +73,21 @@ def render_question(rep: QuestionReport) -> str:
     return "\n".join(sections)
 
 
+def render_usage(use: Usage) -> str:
+    """Spend plus the rows that came close to, or past, Jev's context budget."""
+    lines = [f"usage: {use.input_tokens} input tokens over {use.calls} calls (est. ${use.cost:.4f})"]
+    if use.unmetered:
+        lines[0] += f", {use.unmetered} calls without usage (older cache)"
+    budget = f"Jev's {STATE_BUDGET // 1000}k state + longest question budget"
+    if use.near_limit:
+        lines.append(f"! {use.near_limit} rows estimated at >= {NEAR:.0%} of {budget}: check they were not cut short")
+    if use.rejected:
+        lines.append(f"! {use.rejected} rows rejected by Jev (see `error` in the cache); they count as unanswered")
+    return "\n".join(lines)
+
+
 def render_report(summary: dict[str, Any]) -> str:
-    blocks = [f"jev-eval report - model {summary['model']}"]
+    blocks = [f"jev-eval report - model {summary['model']}", render_usage(summary["usage"])]
     blocks += [render_question(rep) for rep in summary["questions"].values()]
     if summary["composite"] is not None:
         blocks.append("Row-level gate (min of Choice/Score confidences; correct = all gated correct)")

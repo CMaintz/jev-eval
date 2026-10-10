@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import metrics
+from . import budget, metrics
 from .cache import Record
 from .calibrate import Recalibration, recalibration
 from .score import Scored, score_answer, with_tolerance
@@ -120,4 +120,4 @@ def report(records: Sequence[Record], bins: int = 10) -> dict[str, Any]:
     }
     rows = composite(scoring)
     gate = question_report(COMPOSITE, "composite", rows, 0, bins) if rows and len(gated_ids(scoring)) > 1 else None
-    return {"model": scoring.model, "questions": questions, "composite": gate}
+    return {"model": scoring.model, "questions": questions, "composite": gate, "usage": budget.usage(records)}

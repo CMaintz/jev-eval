@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .dataset import LabeledRow, Questions
-from .provider import Provider
+from .provider import Provider, RequestRejected
 
 Record = dict[str, Any]
 Key = tuple[str, str, str]
@@ -46,15 +46,25 @@ def load_cache(path: str | Path) -> list[Record]:
 
 @dataclass(frozen=True)
 class Asker:
-    """Who answers (`provider` under `model`), what is asked, and the answers already known."""
+    """Who answers (`provider` under `model`), what is asked, and the earlier records to reuse."""
 
     provider: Provider
     model: str
     questions: Questions
-    known: dict[Key, Any]
+    known: dict[Key, Record]
 
 
-def _record(asker: Asker, index: int, row: LabeledRow, qid: str, answer: Any) -> Record:
+@dataclass(frozen=True)
+class Reply:
+    """One Jev call: the answers, which call it was, its metered input, or why it was refused."""
+
+    answers: dict[str, Any]
+    call: str | None = None
+    input_tokens: int | None = None
+    error: str | None = None
+
+
+def _record(asker: Asker, index: int, row: LabeledRow, qid: str, source: Record) -> Record:
     question = asker.questions[qid]
     return {
         "model": asker.model,
@@ -64,40 +74,52 @@ def _record(asker: Asker, index: int, row: LabeledRow, qid: str, answer: Any) ->
         "type": question["type"],
         "question_hash": stable_hash(question),
         "question": question,
-        "answer": answer,
+        "answer": source.get("answer"),
         "gold": row.labels[qid],
         "meta": row.meta,
         "state_chars": state_chars(row.state),
+        "call": source.get("call"),
+        "input_tokens": source.get("input_tokens"),
+        **({"error": source["error"]} if source.get("error") else {}),
     }
 
 
-def _ask(provider: Provider, row: LabeledRow, asked: Questions) -> dict[str, Any]:
+def _ask(provider: Provider, row: LabeledRow, asked: Questions, call: str) -> Reply:
     if not asked:
-        return {}
-    answers = provider.evaluate(row.state, asked).get("answers", {})
-    return answers if isinstance(answers, dict) else {}
+        return Reply({})
+    try:
+        response = provider.evaluate(row.state, asked)
+    except RequestRejected as err:
+        return Reply({}, call, error=str(err))
+    answers = response.get("answers")
+    tokens = (response.get("usage") or {}).get("input_tokens")
+    return Reply(answers if isinstance(answers, dict) else {}, call, tokens if isinstance(tokens, int) else None)
+
+
+def _fresh(reply: Reply, qid: str) -> Record:
+    answer = reply.answers.get(qid)
+    return {"answer": answer, "call": reply.call, "input_tokens": reply.input_tokens, "error": reply.error}
 
 
 def run_row(asker: Asker, index: int, row: LabeledRow) -> list[Record]:
     """Score one row: only its labeled questions, and only those not already answered."""
-    labeled = {qid: q for qid, q in asker.questions.items() if qid in row.labels}
     state_hash = stable_hash(row.state)
-    known = asker.known
-    missing = {qid: q for qid, q in labeled.items() if (asker.model, state_hash, stable_hash(q)) not in known}
-    fresh = _ask(asker.provider, row, missing)
+    keys = {qid: (asker.model, state_hash, stable_hash(q)) for qid, q in asker.questions.items() if qid in row.labels}
+    missing = {qid: asker.questions[qid] for qid, key in keys.items() if key not in asker.known}
+    call = stable_hash([asker.model, state_hash, sorted(keys[qid][2] for qid in missing)])
+    reply = _ask(asker.provider, row, missing, call)
     records = []
-    for qid, question in labeled.items():
-        key = (asker.model, state_hash, stable_hash(question))
-        records.append(_record(asker, index, row, qid, fresh.get(qid) if qid in missing else known[key]))
+    for qid, key in keys.items():
+        records.append(_record(asker, index, row, qid, _fresh(reply, qid) if qid in missing else asker.known[key]))
         if records[-1]["answer"] is not None:
-            known[key] = records[-1]["answer"]
+            asker.known[key] = records[-1]
     return records
 
 
-def _known_answers(cache_path: Path) -> dict[Key, Any]:
-    """Answers from a finished cache plus any `.partial` left by an interrupted run."""
+def _known_records(cache_path: Path) -> dict[Key, Record]:
+    """Answered records from a finished cache plus any `.partial` left by an interrupted run."""
     records = load_cache(cache_path) + load_cache(_partial(cache_path))
-    return {record_key(r): r["answer"] for r in records if r.get("answer") is not None}
+    return {record_key(r): r for r in records if r.get("answer") is not None}
 
 
 def _partial(cache_path: Path) -> Path:
@@ -122,7 +144,7 @@ def run(
         asker = Asker(provider, name, questions, {})
         return [rec for i, row in enumerate(rows) for rec in run_row(asker, i, row)]
     path = Path(cache_path)
-    records = _run_streaming(rows, Asker(provider, name, questions, _known_answers(path)), path)
+    records = _run_streaming(rows, Asker(provider, name, questions, _known_records(path)), path)
     write_cache(cache_path, records)
     _partial(Path(cache_path)).unlink()
     return records

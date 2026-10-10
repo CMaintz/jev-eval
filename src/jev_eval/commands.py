@@ -5,19 +5,21 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from . import thresholds as th
 from .analysis import COMPOSITE, report, score_records
-from .cache import Record, load_cache, run
+from .budget import STATE_BUDGET, estimate_tokens, near_limit, usage
+from .cache import Record, load_cache, run, state_chars
 from .calibrate import calibration_document, recalibration
 from .compare import compare
 from .contract import GuardOptions, recommend_all, thresholds_document
-from .dataset import Questions, check_labels, load_config, load_rows, parse_inline
+from .dataset import LabeledRow, Questions, check_labels, load_config, load_rows, parse_inline
 from .provider import DEFAULT_MODEL, provider_from_env
-from .render import render_report, render_thresholds
+from .render import render_report, render_thresholds, render_usage
 from .render_more import render_calibration, render_compare, render_slices
 from .reportsvg import reliability_svg
 from .slices import slice_report
@@ -53,10 +55,21 @@ def cmd_run(args: argparse.Namespace) -> int:
     rows = load_rows(args.data)
     check_labels(rows, questions)
     model = args.model or config_model or DEFAULT_MODEL
+    warn_near_limit(rows, questions)
     records = run(rows, questions, provider_from_env(model), model=model, cache_path=args.cache)
     answered = sum(1 for r in records if r["answer"] is not None)
     print(f"{len(rows)} rows, {len(records)} answers ({answered} usable) -> {args.cache}", file=sys.stderr)
+    print(render_usage(usage(records)), file=sys.stderr)
     return 0
+
+
+def warn_near_limit(rows: Sequence[LabeledRow], questions: Questions) -> None:
+    """Before spending: flag rows whose state plus longest question is close to Jev's budget."""
+    for i, row in enumerate(rows):
+        asked = [q for qid, q in questions.items() if qid in row.labels]
+        tokens = estimate_tokens(state_chars(row.state), asked)
+        if near_limit(tokens):
+            print(f"warning: row {i} is ~{tokens} tokens, near Jev's {STATE_BUDGET} budget", file=sys.stderr)
 
 
 def cmd_report(args: argparse.Namespace) -> int:
