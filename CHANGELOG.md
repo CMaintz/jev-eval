@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-10
+
+### Added
+
+- `run` and `report` print the input tokens Jev metered and an estimated cost. Each cache record now carries the `call` that answered it and that call's `input_tokens`, so a repeated state or a resumed run is not counted twice.
+- `run` warns before sending a row estimated within 10% of Jev's 32k state plus longest question budget, and `report` counts those rows.
+
+### Changed
+
+- A row Jev rejects (HTTP 400, 413 or 422, for example a state over the context limit) is recorded with its `error` and counted as unanswered instead of aborting the run. A rerun asks it again. `TypeSafeProvider` raises the new `RequestRejected` for these.
+
 ## [1.0.0] - 2026-10-04
 
 First release. The `thresholds.json` contract (version 1) is stable from here.

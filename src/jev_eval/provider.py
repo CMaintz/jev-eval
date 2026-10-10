@@ -10,6 +10,7 @@ import urllib.request
 from typing import Any, Protocol
 
 _RETRYABLE = frozenset({429, 529})
+_REJECTED = frozenset({400, 413, 422})
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_BASE_URL = "https://api.typesafe.ai/v1"
 
@@ -18,6 +19,10 @@ class Provider(Protocol):
     """Anything that can answer typed questions about a state."""
 
     def evaluate(self, state: Any, questions: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class RequestRejected(RuntimeError):
+    """Jev refused this one request (e.g. a state over the context limit); the run carries on."""
 
 
 def _post_json(url: str, headers: dict[str, str], body: dict[str, Any], attempts: int = 4) -> dict[str, Any]:
@@ -35,6 +40,8 @@ def _post_json(url: str, headers: dict[str, str], body: dict[str, Any], attempts
             if err.code in _RETRYABLE and attempt < attempts:
                 time.sleep(0.25 * 2 ** (attempt - 1))
                 continue
+            if err.code in _REJECTED:
+                raise RequestRejected(f"HTTP {err.code}: {err.read().decode('utf-8', 'replace')[:200]}") from err
             raise
     raise RuntimeError("unreachable")
 

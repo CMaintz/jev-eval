@@ -76,6 +76,7 @@ One batched Jev call per row asks only that row's labeled questions. Each answer
 - **Row-level gate:** jev-sort escalates a row on the *minimum* of its Choice/Score confidences. When more than one question is gated, jev-eval scores that composite too (correct = every gated answer correct), so the recommended cut-point matches what the tool actually does.
 - **Per-slice** (`report --slice length` or `--slice meta.source`): accuracy and ECE per slice, to catch Jev doing worse on one source or on long states. `length` buckets the state at 500, 2k and 8k characters.
 - **Chart** (`report --svg reliability.svg`): one reliability panel per question. Bars under the diagonal mean overconfidence.
+- **Usage and the context budget:** `run` and `report` print the input tokens Jev metered and an estimated cost at TypeSafe's list price ($0.042 per million input tokens). Jev takes 32k tokens for the state plus the longest question, and its docs do not say what happens past that. So `run` warns before sending a row estimated (at ~4 characters per token) within 10% of the budget, and `report` counts those rows. A row Jev rejects (HTTP 400, 413 or 422) is recorded with its `error` and counted as unanswered; the run carries on, and a rerun asks it again.
 
 A Score answer's `score` is read as a level index (0..N-1, like jev-rerank). If the answer has a numeric `legend` (`{label: position}`), the nearest legend position wins instead.
 
@@ -165,7 +166,7 @@ Also exported: `compare`, `slice_report`, `recommend_all`, `thresholds_document`
 
 `Provider` is a protocol (`evaluate(state, questions) -> dict`). Pass any object that implements it, for example a fake in tests. `provider_from_env` reads `JEV_API_KEY` and honors `TYPESAFE_AI_BASE_URL` for a self-host, proxy or mock. The default model is `jev-latest`.
 
-The cache is JSONL, one line per (row, question): model, state and question hashes, the question definition, the raw answer, the gold label, `meta` and the state size. The state itself is not stored. A rerun reuses cached answers (keyed by model, state hash and question hash). Progress streams to `<cache>.partial`, so an interrupted run resumes, and a repeated state is paid for once.
+The cache is JSONL, one line per (row, question): model, state and question hashes, the question definition, the raw answer, the gold label, `meta`, the state size, and the call that answered it with its metered `input_tokens` (or the `error` Jev refused it with). The state itself is not stored. A rerun reuses cached answers (keyed by model, state hash and question hash). Progress streams to `<cache>.partial`, so an interrupted run resumes, and a repeated state is paid for once.
 
 ## Honest limitations
 
@@ -174,10 +175,10 @@ The cache is JSONL, one line per (row, question): model, state and question hash
 - **Score correctness is a modeling choice** (nearest label). The report states this and shows within-1 and mean distance next to it.
 - **Small samples lie**, which is why the min-N guard and out-of-bag scoring exist. A gate that covers a handful of rows can clear any target by luck; the out-of-bag numbers and the range expose it.
 - **Not a gate.** It recommends a cut-point for a human to review. It never changes a production threshold itself.
-- Text only, ~32k context per state, like the rest of the family.
+- Text only, 32k tokens for the state plus the longest question, like the rest of the family. Long states need summarizing first; jev-eval warns about them but cannot shorten them.
 
 ## Status
 
-**1.0**: `run`, `report` (with slices and an SVG chart), `thresholds` with the out-of-bag bootstrap guard, `compare`, measure-only `calibrate`, and the `thresholds.json` v1 contract, for all three question types. Tested against a fake provider at 99% coverage. Gated by the [Foundry](https://github.com/CMaintz/foundry) Python stack (ruff, mypy strict, pytest, pip-audit, structural smells).
+**1.1**: usage and cost, near-limit warnings and per-row rejections on top of **1.0**: `run`, `report` (with slices and an SVG chart), `thresholds` with the out-of-bag bootstrap guard, `compare`, measure-only `calibrate`, and the `thresholds.json` v1 contract, for all three question types. Tested against a fake provider at 99% coverage. Gated by the [Foundry](https://github.com/CMaintz/foundry) Python stack (ruff, mypy strict, pytest, pip-audit, structural smells).
 
 MIT (c) Christoffer Maintz
