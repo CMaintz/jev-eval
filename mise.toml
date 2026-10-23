@@ -48,7 +48,7 @@ FOUNDRY_COV_MIN = "90"
 # a cache dir at this ref, not vendored (see that task). Renovate tracks the pin via the
 # comment above it.
 # renovate: datasource=github-tags depName=CMaintz/foundry
-FOUNDRY_SCRIPTS_REF = "v2.12.0"
+FOUNDRY_SCRIPTS_REF = "v2.13.0"
 # The project .venv first (so mypy/pytest/pip-audit resolve to the pinned ones), then the
 # habit-hooks venv (so `smells` finds the pinned habit-hooks), then the Foundry gate scripts
 # cache (so the gate runs `foundry-verb-wrap` by name), then the repo's own scripts/. Both
