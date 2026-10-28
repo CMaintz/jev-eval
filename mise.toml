@@ -44,11 +44,12 @@ DEPTRY_VERSION = "0.25.1"
 # Coverage floor for `test`. Override per repo (a legacy repo can start lower and
 # ratchet up); CI inherits whatever you set here.
 FOUNDRY_COV_MIN = "90"
-# The Foundry gate scripts (foundry-verb-wrap) are provisioned by setup:foundry-scripts into
-# a cache dir at this ref, not vendored (see that task). Renovate tracks the pin via the
-# comment above it.
+# The Foundry scripts (foundry-verb-wrap, foundry-explain and its rule catalog) are
+# provisioned by setup:foundry-scripts into a cache dir at this ref, not vendored (see that
+# task). Renovate tracks the pin via the comment above it.
+# A bump must also update the sha256 lines in setup:foundry-scripts.
 # renovate: datasource=github-tags depName=CMaintz/foundry
-FOUNDRY_SCRIPTS_REF = "v2.13.0"
+FOUNDRY_SCRIPTS_REF = "v2.14.0"
 # The project .venv first (so mypy/pytest/pip-audit resolve to the pinned ones), then the
 # habit-hooks venv (so `smells` finds the pinned habit-hooks), then the Foundry gate scripts
 # cache (so the gate runs `foundry-verb-wrap` by name), then the repo's own scripts/. Both
@@ -206,30 +207,56 @@ description = "Dependency vulnerabilities (pip-audit over the project .venv)"
 # runtime + dev deps installed in the .venv are audited.
 run = "pip-audit --skip-editable"
 
-# Fetch the pinned Foundry gate scripts into a cache dir, rather than vendoring copies into
-# the repo (agent/CI plumbing, not the repo's code; a vendored copy drifts and needs a
-# re-sync on every bump). Pinned to FOUNDRY_SCRIPTS_REF, provisioned once like setup:pytools.
-# Offline-safe: no network call when every script is already cached at this ref, so the
-# gate hot path never depends on the network; a ref bump needs the network once.
+# Fetch the pinned Foundry scripts into a cache dir instead of copying them into the repo
+# (agent/CI plumbing, not the repo's code; a copy drifts and needs a re-sync on every bump).
+# Every run checks each script against its sha256 below, cached or not: the tag is only a
+# locator, so a moved tag, a proxy page or a truncated download is re-fetched once and then
+# refused, never cached. A verified cache needs no network, so the gate hot path stays
+# offline; a ref bump needs the network once. cut-release.sh writes the digests for the tag
+# it cuts, so bumping FOUNDRY_SCRIPTS_REF means taking that tag's digest lines with it.
 [tasks."setup:foundry-scripts"]
-description = "Fetch the pinned Foundry gate scripts into a cache dir (de-vendored)"
+description = "Fetch the pinned Foundry scripts into a cache dir, sha256-verified"
 run = '''
 set -eu
+# <file> <sha256 of that file at FOUNDRY_SCRIPTS_REF>, one per line. A bare name is
+# scripts/<name>; a path (the rule catalog) is fetched from there, cached by basename.
+scripts='
+foundry-verb-wrap bec5e917c13c22ed534ea0a3a49e33b099be35f05d8fc39473b0bd960fc4bf0e
+foundry-explain 6b483daf5867badb4db5d222fccbe717b310deda6ebd064e8f478ec3f2dcef60
+presets/rules/catalog.toml c311172c29dd735821e2a0efe566aecc35320f45d375bfac1a2622a43ba4fb9b
+presets/rules/matchers.toml 8f0a748fc181e1a37c754d79e7a196e4d9006592e633826c8031b89acba7f455
+'
 dst="$HOME/.local/opt/foundry-scripts-$FOUNDRY_SCRIPTS_REF"
-scripts="foundry-verb-wrap"
-need=""
-for s in $scripts; do [ -f "$dst/$s" ] || need="$need $s"; done
-[ -z "$need" ] && exit 0
+base="https://raw.githubusercontent.com/CMaintz/foundry/$FOUNDRY_SCRIPTS_REF"
+# sha256sum ships with Linux and Git Bash; macOS has only shasum.
+digest() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 mkdir -p "$dst"
-base="https://raw.githubusercontent.com/CMaintz/foundry/$FOUNDRY_SCRIPTS_REF/scripts"
-for s in $need; do
-  if ! curl -fsSL "$base/$s" -o "$dst/$s.part"; then
+while read -r s want; do
+  [ -n "$s" ] || continue
+  case "$s" in */*) src="$s" ;; *) src="scripts/$s" ;; esac
+  f="${s##*/}"
+  [ -f "$dst/$f" ] && [ "$(digest "$dst/$f")" = "$want" ] && continue
+  # A per-run temp file, moved into place only once verified: concurrent runs (parallel
+  # worktrees share $HOME) never write into each other's download or expose a partial one.
+  tmp=$(mktemp "$dst/.$f.XXXXXX")
+  if ! curl -fsSL "$base/$src" -o "$tmp"; then
+    rm -f "$tmp"
     echo "setup:foundry-scripts: cannot fetch $s at $FOUNDRY_SCRIPTS_REF (network needed once per ref)" >&2
-    rm -f "$dst/$s.part"; exit 1
+    exit 1
   fi
-  mv "$dst/$s.part" "$dst/$s"
-  chmod +x "$dst/$s" 2>/dev/null || true
-done
+  got=$(digest "$tmp")
+  if [ "$got" != "$want" ]; then
+    rm -f "$tmp"
+    echo "setup:foundry-scripts: $s at $FOUNDRY_SCRIPTS_REF has sha256 $got, expected $want; refusing it." >&2
+    echo "  If FOUNDRY_SCRIPTS_REF was just bumped, copy the digest lines from that ref's mise template;" >&2
+    echo "  otherwise the download was not the script (proxy or captive page, truncation, moved tag)." >&2
+    exit 1
+  fi
+  chmod +x "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$dst/$f"
+done <<EOF
+$scripts
+EOF
 '''
 
 [tasks.gate]
